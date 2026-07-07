@@ -1,0 +1,698 @@
+     1→"use client";
+     2→
+     3→/**
+     4→ * BlockExchange — Home (landing) view.
+     5→ *
+     6→ * Renders the full landing page when `view === "home"`. The parent page.tsx is
+     7→ * responsible for showing <Navbar /> and <Footer />; this component only renders
+     8→ * the hero + marketing sections between them.
+     9→ */
+    10→
+    11→import { useEffect, useMemo, useState, type ReactNode } from "react";
+    12→import { motion } from "framer-motion";
+    13→import { Area, AreaChart, ResponsiveContainer, YAxis } from "recharts";
+    14→import {
+    15→  ArrowDownToLine,
+    16→  ArrowRight,
+    17→  ArrowUpFromLine,
+    18→  BadgeCheck,
+    19→  CandlestickChart,
+    20→  CreditCard,
+    21→  Headset,
+    22→  Shield,
+    23→  Trophy,
+    24→  UserPlus,
+    25→  Wallet,
+    26→  Zap,
+    27→} from "lucide-react";
+    28→import { COINS, formatPrice, type Coin } from "@/lib/market-data";
+    29→import { useAuth } from "@/lib/auth-store";
+    30→import { Button } from "@/components/ui/button";
+    31→import { cn } from "@/lib/utils";
+    32→
+    33→/* ------------------------------ live prices ------------------------------ */
+    34→
+    35→interface LivePrice {
+    36→  price: number;
+    37→  change: number; // 24h % change
+    38→}
+    39→
+    40→/** Random-walk price simulation. Updates every 2s for the "live" feel. */
+    41→function useLivePrices(): LivePrice[] {
+    42→  const [prices, setPrices] = useState<LivePrice[]>(() =>
+    43→    COINS.map((c) => ({
+    44→      price: c.basePrice,
+    45→      change: (Math.random() - 0.5) * 8,
+    46→    }))
+    47→  );
+    48→
+    49→  useEffect(() => {
+    50→    const t = setInterval(() => {
+    51→      setPrices((prev) =>
+    52→        prev.map((p, i) => {
+    53→          const drift = (Math.random() - 0.5) * COINS[i].basePrice * 0.004;
+    54→          const next = Math.max(p.price + drift, COINS[i].basePrice * 0.5);
+    55→          const change = ((next - COINS[i].basePrice) / COINS[i].basePrice) * 100;
+    56→          return { price: next, change };
+    57→        })
+    58→      );
+    59→    }, 2000);
+    60→    return () => clearInterval(t);
+    61→  }, []);
+    62→
+    63→  return prices;
+    64→}
+    65→
+    66→/** Generate a tiny sparkline dataset (20 points) seeded off the coin's base. */
+    67→function genSparkline(base: number, points = 20): { v: number }[] {
+    68→  const data: { v: number }[] = [];
+    69→  let v = base * 0.98;
+    70→  const vol = base * 0.012;
+    71→  for (let i = 0; i < points; i++) {
+    72→    v = Math.max(v + (Math.random() - 0.48) * vol, base * 0.5);
+    73→    data.push({ v });
+    74→  }
+    75→  return data;
+    76→}
+    77→
+    78→/* -------------------------------- content -------------------------------- */
+    79→
+    80→type LucideIcon = typeof Zap;
+    81→
+    82→const FLOATING_COINS = [
+    83→  { icon: "₿", color: "#f7931a", top: "12%", left: "8%", delay: 0, size: 56 },
+    84→  { icon: "Ξ", color: "#627eea", top: "22%", left: "86%", delay: 1.5, size: 48 },
+    85→  { icon: "◎", color: "#9945ff", top: "68%", left: "5%", delay: 0.8, size: 52 },
+    86→  { icon: "B", color: "#f3ba2f", top: "72%", left: "92%", delay: 2.2, size: 44 },
+    87→  { icon: "Ð", color: "#c2a633", top: "46%", left: "94%", delay: 3, size: 40 },
+    88→  { icon: "₳", color: "#3b82f6", top: "85%", left: "75%", delay: 1.2, size: 50 },
+    89→];
+    90→
+    91→const FEATURES: { icon: LucideIcon; title: string; desc: string }[] = [
+    92→  { icon: Zap, title: "Live Crypto Prices", desc: "Real-time market data for 8 top cryptocurrencies with sub-second updates." },
+    93→  { icon: Shield, title: "Secure Wallet", desc: "Bank-grade encryption keeps your demo funds safe at all times." },
+    94→  { icon: ArrowDownToLine, title: "Instant Deposits", desc: "Top up your demo balance instantly and start trading in seconds." },
+    95→  { icon: ArrowUpFromLine, title: "Fast Withdrawals", desc: "Request payouts any time — processed and settled in minutes." },
+    96→  { icon: CandlestickChart, title: "Binary Trading", desc: "30s / 60s / 120s contracts. Predict UP or DOWN and earn up to 50%." },
+    97→  { icon: Headset, title: "24/7 Support", desc: "Round-the-clock human support across all major time zones." },
+    98→  { icon: BadgeCheck, title: "KYC Verification", desc: "Compliant identity verification for a safe trading environment." },
+    99→  { icon: Wallet, title: "Multi-Currency", desc: "Trade in USDT, BTC, ETH and more from a single wallet." },
+   100→];
+   101→
+   102→const STEPS: { icon: LucideIcon; title: string; desc: string }[] = [
+   103→  { icon: UserPlus, title: "Register", desc: "Create your free BlockExchange account in under 60 seconds." },
+   104→  { icon: CreditCard, title: "Deposit", desc: "Get 10,000 USDT demo balance credited to your wallet instantly." },
+   105→  { icon: Trophy, title: "Trade & Win", desc: "Pick a coin, choose UP or DOWN, and earn up to 50% returns." },
+   106→];
+   107→
+   108→const RETURNS = [
+   109→  { duration: "30 Seconds", pct: 20, color: "#0ea5ff" },
+   110→  { duration: "60 Seconds", pct: 30, color: "#2196f3" },
+   111→  { duration: "120 Seconds", pct: 50, color: "#00c853" },
+   112→];
+   113→
+   114→const HERO_STATS = ["$2.4B+ Volume", "8 Coins", "50% Max Returns", "24/7 Support"];
+   115→
+   116→const BOTTOM_STATS = [
+   117→  { value: "50K+", label: "Active Traders" },
+   118→  { value: "$2.4B+", label: "Volume" },
+   119→  { value: "8", label: "Cryptocurrencies" },
+   120→  { value: "99.9%", label: "Uptime" },
+   121→];
+   122→
+   123→/* ------------------------------ sub-blocks ------------------------------- */
+   124→
+   125→function FloatingCoins() {
+   126→  return (
+   127→    <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden>
+   128→      {FLOATING_COINS.map((c, i) => (
+   129→        <motion.span
+   130→          key={i}
+   131→          className="absolute font-bold select-none"
+   132→          style={{
+   133→            top: c.top,
+   134→            left: c.left,
+   135→            color: c.color,
+   136→            fontSize: c.size,
+   137→            opacity: 0.18,
+   138→            textShadow: `0 0 24px ${c.color}`,
+   139→          }}
+   140→          initial={{ y: 0, x: 0 }}
+   141→          animate={{
+   142→            y: [0, -24, 0, 18, 0],
+   143→            x: [0, 12, -8, 6, 0],
+   144→          }}
+   145→          transition={{
+   146→            duration: 12 + i,
+   147→            delay: c.delay,
+   148→            repeat: Infinity,
+   149→            ease: "easeInOut",
+   150→          }}
+   151→        >
+   152→          {c.icon}
+   153→        </motion.span>
+   154→      ))}
+   155→    </div>
+   156→  );
+   157→}
+   158→
+   159→function MiniCandlestick() {
+   160→  const [bars, setBars] = useState<{ h: number; up: boolean }[]>(() =>
+   161→    Array.from({ length: 20 }, () => ({
+   162→      h: 25 + Math.random() * 70,
+   163→      up: Math.random() > 0.45,
+   164→    }))
+   165→  );
+   166→
+   167→  useEffect(() => {
+   168→    const t = setInterval(() => {
+   169→      setBars((prev) => [
+   170→        ...prev.slice(1),
+   171→        { h: 20 + Math.random() * 75, up: Math.random() > 0.42 },
+   172→      ]);
+   173→    }, 1400);
+   174→    return () => clearInterval(t);
+   175→  }, []);
+   176→
+   177→  return (
+   178→    <div className="bx-glass rounded-2xl p-5 bx-glow w-full max-w-sm">
+   179→      <div className="flex items-center justify-between mb-4">
+   180→        <div className="flex items-center gap-2">
+   181→          <span className="text-2xl font-bold text-[#f7931a]">₿</span>
+   182→          <div className="leading-tight">
+   183→            <div className="text-sm font-semibold text-white">BTC/USDT</div>
+   184→            <div className="text-[10px] text-muted-foreground">Live preview</div>
+   185→          </div>
+   186→        </div>
+   187→        <span className="inline-flex items-center gap-1 text-[10px] text-[#00c853] font-semibold">
+   188→          <span className="w-1.5 h-1.5 rounded-full bg-[#00c853] bx-pulse-dot" />
+   189→          LIVE
+   190→        </span>
+   191→      </div>
+   192→
+   193→      <div className="h-44 flex items-end gap-1.5">
+   194→        {bars.map((b, i) => (
+   195→          <motion.div
+   196→            key={i}
+   197→            className="flex-1 rounded-t-sm"
+   198→            style={{
+   199→              background: b.up
+   200→                ? "linear-gradient(180deg,#00e676,#00c853)"
+   201→                : "linear-gradient(180deg,#ff6b6b,#ff3b30)",
+   202→              opacity: 0.55 + (b.h / 100) * 0.45,
+   203→              boxShadow: b.up
+   204→                ? "0 0 8px rgba(0,200,83,0.4)"
+   205→                : "0 0 8px rgba(255,59,48,0.4)",
+   206→            }}
+   207→            animate={{ height: `${b.h}%` }}
+   208→            transition={{ duration: 0.8, ease: "easeOut" }}
+   209→          />
+   210→        ))}
+   211→      </div>
+   212→
+   213→      <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+   214→        <div className="bx-glass-soft rounded-lg py-2">
+   215→          <div className="text-[10px] text-muted-foreground">24h High</div>
+   216→          <div className="text-xs font-semibold text-[#00c853]">$68,420</div>
+   217→        </div>
+   218→        <div className="bx-glass-soft rounded-lg py-2">
+   219→          <div className="text-[10px] text-muted-foreground">24h Low</div>
+   220→          <div className="text-xs font-semibold text-[#ff3b30]">$65,180</div>
+   221→        </div>
+   222→        <div className="bx-glass-soft rounded-lg py-2">
+   223→          <div className="text-[10px] text-muted-foreground">Volume</div>
+   224→          <div className="text-xs font-semibold text-white">$1.2B</div>
+   225→        </div>
+   226→      </div>
+   227→    </div>
+   228→  );
+   229→}
+   230→
+   231→function TickerTape({ prices }: { prices: LivePrice[] }) {
+   232→  // Duplicate COINS list so the marquee loops seamlessly.
+   233→  const items = useMemo(() => [...COINS, ...COINS], []);
+   234→  return (
+   235→    <div className="relative overflow-hidden bx-glass border-y border-white/5">
+   236→      <div className="flex w-max bx-ticker-track">
+   237→        {items.map((coin, i) => {
+   238→          const p = prices[i % COINS.length];
+   239→          if (!p) return null;
+   240→          const up = p.change >= 0;
+   241→          return (
+   242→            <div
+   243→              key={`${coin.symbol}-${i}`}
+   244→              className="flex items-center gap-2 px-5 py-3 border-r border-white/5 whitespace-nowrap"
+   245→            >
+   246→              <span className="text-base font-bold" style={{ color: coin.color }}>
+   247→                {coin.icon}
+   248→              </span>
+   249→              <span className="text-sm font-semibold text-white">{coin.symbol}</span>
+   250→              <span className="text-xs text-muted-foreground tabular-nums">
+   251→                ${formatPrice(p.price, coin.pair)}
+   252→              </span>
+   253→              <span
+   254→                className={cn(
+   255→                  "text-xs font-semibold tabular-nums",
+   256→                  up ? "text-[#00c853]" : "text-[#ff3b30]"
+   257→                )}
+   258→              >
+   259→                {up ? "▲" : "▼"} {Math.abs(p.change).toFixed(2)}%
+   260→              </span>
+   261→            </div>
+   262→          );
+   263→        })}
+   264→      </div>
+   265→    </div>
+   266→  );
+   267→}
+   268→
+   269→function FeatureCard({
+   270→  icon: Icon,
+   271→  title,
+   272→  desc,
+   273→  index,
+   274→}: {
+   275→  icon: LucideIcon;
+   276→  title: string;
+   277→  desc: string;
+   278→  index: number;
+   279→}) {
+   280→  return (
+   281→    <motion.div
+   282→      initial={{ opacity: 0, y: 24 }}
+   283→      whileInView={{ opacity: 1, y: 0 }}
+   284→      viewport={{ once: true }}
+   285→      transition={{ duration: 0.4, delay: (index % 4) * 0.08 }}
+   286→      className="bx-glass rounded-2xl p-5 hover:bx-glow hover:border-[#0ea5ff]/40 transition-all group"
+   287→    >
+   288→      <div className="w-11 h-11 rounded-xl bx-blue-gradient flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+   289→        <Icon className="text-white" size={20} />
+   290→      </div>
+   291→      <h3 className="text-base font-semibold text-white mb-1.5">{title}</h3>
+   292→      <p className="text-sm text-muted-foreground leading-relaxed">{desc}</p>
+   293→    </motion.div>
+   294→  );
+   295→}
+   296→
+   297→function MarketCard({ coin, live }: { coin: Coin; live: LivePrice }) {
+   298→  const navigate = useAuth((s) => s.navigate);
+   299→  const spark = useMemo(() => genSparkline(coin.basePrice), [coin.basePrice]);
+   300→  const up = live.change >= 0;
+   301→  const gradId = `spark-${coin.symbol}`;
+   302→
+   303→  return (
+   304→    <motion.div
+   305→      initial={{ opacity: 0, y: 18 }}
+   306→      whileInView={{ opacity: 1, y: 0 }}
+   307→      viewport={{ once: true }}
+   308→      transition={{ duration: 0.35 }}
+   309→      className="bx-glass rounded-2xl p-5 hover:bx-glow hover:border-[#0ea5ff]/40 transition-all"
+   310→    >
+   311→      <div className="flex items-center justify-between">
+   312→        <div className="flex items-center gap-2.5">
+   313→          <div
+   314→            className="w-9 h-9 rounded-full flex items-center justify-center text-base font-bold"
+   315→            style={{
+   316→              background: `${coin.color}22`,
+   317→              color: coin.color,
+   318→              border: `1px solid ${coin.color}55`,
+   319→            }}
+   320→          >
+   321→            {coin.icon}
+   322→          </div>
+   323→          <div className="leading-tight">
+   324→            <div className="text-sm font-semibold text-white">{coin.symbol}</div>
+   325→            <div className="text-[11px] text-muted-foreground">{coin.name}</div>
+   326→          </div>
+   327→        </div>
+   328→        <span
+   329→          className={cn(
+   330→            "px-2 py-0.5 rounded-md text-xs font-semibold tabular-nums",
+   331→            up ? "bg-[#00c853]/15 text-[#00c853]" : "bg-[#ff3b30]/15 text-[#ff3b30]"
+   332→          )}
+   333→        >
+   334→          {up ? "+" : ""}
+   335→          {live.change.toFixed(2)}%
+   336→        </span>
+   337→      </div>
+   338→
+   339→      <div className="mt-3 text-xl font-bold text-white tabular-nums">
+   340→        ${formatPrice(live.price, coin.pair)}
+   341→      </div>
+   342→
+   343→      <div className="h-10 -mx-1 mt-2">
+   344→        <ResponsiveContainer width="100%" height="100%">
+   345→          <AreaChart data={spark} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+   346→            <defs>
+   347→              <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+   348→                <stop offset="0%" stopColor={coin.color} stopOpacity={0.6} />
+   349→                <stop offset="100%" stopColor={coin.color} stopOpacity={0} />
+   350→              </linearGradient>
+   351→            </defs>
+   352→            <YAxis domain={["dataMin", "dataMax"]} hide />
+   353→            <Area
+   354→              type="monotone"
+   355→              dataKey="v"
+   356→              stroke={coin.color}
+   357→              strokeWidth={1.8}
+   358→              fill={`url(#${gradId})`}
+   359→              isAnimationActive={false}
+   360→            />
+   361→          </AreaChart>
+   362→        </ResponsiveContainer>
+   363→      </div>
+   364→
+   365→      <Button
+   366→        onClick={() => navigate("trade")}
+   367→        size="sm"
+   368→        className="w-full mt-3 bg-gradient-to-r from-[#2196F3] to-[#0D47A1] hover:opacity-90 text-white"
+   369→      >
+   370→        Trade
+   371→      </Button>
+   372→    </motion.div>
+   373→  );
+   374→}
+   375→
+   376→function SectionHeading({
+   377→  tag,
+   378→  title,
+   379→  sub,
+   380→}: {
+   381→  tag: string;
+   382→  title: ReactNode;
+   383→  sub?: string;
+   384→}) {
+   385→  return (
+   386→    <motion.div
+   387→      initial={{ opacity: 0, y: 20 }}
+   388→      whileInView={{ opacity: 1, y: 0 }}
+   389→      viewport={{ once: true }}
+   390→      transition={{ duration: 0.5 }}
+   391→      className="text-center max-w-2xl mx-auto mb-12"
+   392→    >
+   393→      <span className="inline-block px-3 py-1 rounded-full bx-glass-soft text-xs font-semibold tracking-wider text-[#0ea5ff] uppercase">
+   394→        {tag}
+   395→      </span>
+   396→      <h2 className="mt-4 text-3xl md:text-4xl font-bold text-white">{title}</h2>
+   397→      {sub && <p className="mt-3 text-muted-foreground">{sub}</p>}
+   398→    </motion.div>
+   399→  );
+   400→}
+   401→
+   402→/* ------------------------------ main view -------------------------------- */
+   403→
+   404→export function HomeView() {
+   405→  const navigate = useAuth((s) => s.navigate);
+   406→  const prices = useLivePrices();
+   407→
+   408→  return (
+   409→    <div className="bx-fade-in">
+   410→      {/* 1. Hero */}
+   411→      <section className="relative pt-24 min-h-screen flex items-center bx-grid-bg overflow-hidden">
+   412→        <FloatingCoins />
+   413→        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 w-full relative z-10">
+   414→          <div className="grid lg:grid-cols-2 gap-12 items-center">
+   415→            {/* Left: copy */}
+   416→            <motion.div
+   417→              initial={{ opacity: 0, y: 24 }}
+   418→              animate={{ opacity: 1, y: 0 }}
+   419→              transition={{ duration: 0.6 }}
+   420→            >
+   421→              <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bx-glass-soft text-xs font-medium text-white/90">
+   422→                <span className="w-1.5 h-1.5 rounded-full bg-[#00c853] bx-pulse-dot" />
+   423→                🚀 Live • 50,000+ traders
+   424→              </span>
+   425→
+   426→              <h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-white leading-[1.05]">
+   427→                Trade Crypto Smarter with{" "}
+   428→                <span className="bx-text-gradient">BlockExchange</span>
+   429→              </h1>
+   430→
+   431→              <p className="mt-5 text-base md:text-lg text-muted-foreground max-w-xl leading-relaxed">
+   432→                Predict market movements and earn up to 50% returns in minutes. Trade
+   433→                binary options on 8 top cryptocurrencies with real-time charts and
+   434→                instant settlements.
+   435→              </p>
+   436→
+   437→              <div className="mt-7 flex flex-wrap items-center gap-3">
+   438→                <Button
+   439→                  size="lg"
+   440→                  onClick={() => navigate("trade")}
+   441→                  className="bg-gradient-to-r from-[#2196F3] to-[#0D47A1] hover:opacity-90 text-white bx-glow"
+   442→                >
+   443→                  Start Trading
+   444→                  <ArrowRight size={16} />
+   445→                </Button>
+   446→                <Button
+   447→                  size="lg"
+   448→                  variant="ghost"
+   449→                  onClick={() => navigate("login")}
+   450→                  className="text-white hover:text-white hover:bg-white/5 border border-white/10"
+   451→                >
+   452→                  Login
+   453→                </Button>
+   454→              </div>
+   455→
+   456→              <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2">
+   457→                {HERO_STATS.map((s) => (
+   458→                  <span
+   459→                    key={s}
+   460→                    className="text-xs md:text-sm text-muted-foreground"
+   461→                  >
+   462→                    <span className="text-white font-semibold">{s.split(" ")[0]}</span>{" "}
+   463→                    {s.split(" ").slice(1).join(" ")}
+   464→                  </span>
+   465→                ))}
+   466→              </div>
+   467→            </motion.div>
+   468→
+   469→            {/* Right: mini candlestick preview (hidden on mobile) */}
+   470→            <motion.div
+   471→              initial={{ opacity: 0, scale: 0.95 }}
+   472→              animate={{ opacity: 1, scale: 1 }}
+   473→              transition={{ duration: 0.7, delay: 0.15 }}
+   474→              className="hidden lg:flex justify-center"
+   475→            >
+   476→              <div className="w-full flex flex-col items-end gap-2">
+   477→                <div className="text-xs text-muted-foreground pr-2">
+   478→                  Live BTC/USDT preview
+   479→                </div>
+   480→                <MiniCandlestick />
+   481→              </div>
+   482→            </motion.div>
+   483→          </div>
+   484→        </div>
+   485→      </section>
+   486→
+   487→      {/* 2. Live ticker tape */}
+   488→      <TickerTape prices={prices} />
+   489→
+   490→      {/* 3. Features grid */}
+   491→      <section className="py-20">
+   492→        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+   493→          <SectionHeading
+   494→            tag="Features"
+   495→            title={<>Everything you need to <span className="bx-text-gradient">trade smarter</span></>}
+   496→            sub="A complete crypto trading toolkit — built for speed, security and instant payouts."
+   497→          />
+   498→          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+   499→            {FEATURES.map((f, i) => (
+   500→              <FeatureCard
+   501→                key={f.title}
+   502→                icon={f.icon}
+   503→                title={f.title}
+   504→                desc={f.desc}
+   505→                index={i}
+   506→              />
+   507→            ))}
+   508→          </div>
+   509→        </div>
+   510→      </section>
+   511→
+   512→      {/* 4. Live market */}
+   513→      <section className="py-20 border-y border-white/5 bx-glass-soft">
+   514→        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+   515→          <SectionHeading
+   516→            tag="Markets"
+   517→            title={<>Live <span className="bx-text-gradient">crypto markets</span></>}
+   518→            sub="Real-time prices across 8 top cryptocurrencies. Click any coin to start trading."
+   519→          />
+   520→          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+   521→            {COINS.map((coin, i) => (
+   522→              <MarketCard key={coin.symbol} coin={coin} live={prices[i]} />
+   523→            ))}
+   524→          </div>
+   525→        </div>
+   526→      </section>
+   527→
+   528→      {/* 5. How it works */}
+   529→      <section className="py-20">
+   530→        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+   531→          <SectionHeading
+   532→            tag="How it works"
+   533→            title={<>Start in <span className="bx-text-gradient">3 simple steps</span></>}
+   534→            sub="From signup to your first winning trade in under two minutes."
+   535→          />
+   536→          <div className="grid md:grid-cols-3 gap-6">
+   537→            {STEPS.map((step, i) => {
+   538→              const Icon = step.icon;
+   539→              return (
+   540→                <motion.div
+   541→                  key={step.title}
+   542→                  initial={{ opacity: 0, y: 24 }}
+   543→                  whileInView={{ opacity: 1, y: 0 }}
+   544→                  viewport={{ once: true }}
+   545→                  transition={{ duration: 0.4, delay: i * 0.12 }}
+   546→                  className="bx-glass rounded-2xl p-6 relative overflow-hidden"
+   547→                >
+   548→                  <span className="absolute -top-2 -right-2 text-7xl font-extrabold text-white/5 select-none">
+   549→                    {i + 1}
+   550→                  </span>
+   551→                  <div className="relative z-10">
+   552→                    <div className="flex items-center gap-3 mb-4">
+   553→                      <div className="w-11 h-11 rounded-xl bx-blue-gradient flex items-center justify-center">
+   554→                        <Icon className="text-white" size={20} />
+   555→                      </div>
+   556→                      <span className="text-xs font-semibold tracking-wider text-[#0ea5ff] uppercase">
+   557→                        Step {i + 1}
+   558→                      </span>
+   559→                    </div>
+   560→                    <h3 className="text-lg font-semibold text-white mb-2">
+   561→                      {step.title}
+   562→                    </h3>
+   563→                    <p className="text-sm text-muted-foreground leading-relaxed">
+   564→                      {step.desc}
+   565→                    </p>
+   566→                  </div>
+   567→                </motion.div>
+   568→              );
+   569→            })}
+   570→          </div>
+   571→        </div>
+   572→      </section>
+   573→
+   574→      {/* 6. Trading returns showcase */}
+   575→      <section className="py-20 border-y border-white/5 bx-glass-soft">
+   576→        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+   577→          <SectionHeading
+   578→            tag="Returns"
+   579→            title={<>Higher timeframes, <span className="bx-text-gradient">higher payouts</span></>}
+   580→            sub="Pick a duration, predict the market, and earn up to 50% on every winning trade."
+   581→          />
+   582→          <div className="grid md:grid-cols-3 gap-6">
+   583→            {RETURNS.map((r, i) => (
+   584→              <motion.div
+   585→                key={r.duration}
+   586→                initial={{ opacity: 0, y: 24 }}
+   587→                whileInView={{ opacity: 1, y: 0 }}
+   588→                viewport={{ once: true }}
+   589→                transition={{ duration: 0.4, delay: i * 0.12 }}
+   590→                className="relative bx-glass rounded-2xl p-8 text-center bx-glow"
+   591→                style={{ borderColor: `${r.color}55` }}
+   592→              >
+   593→                <div
+   594→                  className="absolute inset-x-0 top-0 h-1 rounded-t-2xl"
+   595→                  style={{ background: `linear-gradient(90deg, transparent, ${r.color}, transparent)` }}
+   596→                />
+   597→                <div className="text-sm font-semibold tracking-wider text-muted-foreground uppercase">
+   598→                  {r.duration}
+   599→                </div>
+   600→                <div
+   601→                  className="mt-4 text-6xl font-extrabold tabular-nums"
+   602→                  style={{
+   603→                    background: `linear-gradient(180deg, ${r.color}, #ffffff)`,
+   604→                    WebkitBackgroundClip: "text",
+   605→                    backgroundClip: "text",
+   606→                    color: "transparent",
+   607→                  }}
+   608→                >
+   609→                  {r.pct}%
+   610→                </div>
+   611→                <div className="mt-2 text-sm text-muted-foreground">
+   612→                  return on every winning trade
+   613→                </div>
+   614→                <Button
+   615→                  onClick={() => navigate("trade")}
+   616→                  className="mt-6 w-full text-white"
+   617→                  style={{
+   618→                    background: `linear-gradient(135deg, ${r.color}, #0d47a1)`,
+   619→                  }}
+   620→                >
+   621→                  Trade {r.duration.split(" ")[0]}
+   622→                </Button>
+   623→              </motion.div>
+   624→            ))}
+   625→          </div>
+   626→        </div>
+   627→      </section>
+   628→
+   629→      {/* 7. CTA banner */}
+   630→      <section className="py-20">
+   631→        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+   632→          <motion.div
+   633→            initial={{ opacity: 0, y: 24 }}
+   634→            whileInView={{ opacity: 1, y: 0 }}
+   635→            viewport={{ once: true }}
+   636→            transition={{ duration: 0.5 }}
+   637→            className="relative overflow-hidden rounded-3xl bx-glass bx-glow px-6 py-12 md:py-16 text-center"
+   638→          >
+   639→            <div
+   640→              className="absolute inset-0 opacity-30"
+   641→              style={{
+   642→                background:
+   643→                  "radial-gradient(600px 300px at 20% 0%, rgba(14,165,255,0.5), transparent 60%), radial-gradient(500px 300px at 80% 100%, rgba(33,150,243,0.4), transparent 60%)",
+   644→              }}
+   645→              aria-hidden
+   646→            />
+   647→            <div className="relative z-10 max-w-2xl mx-auto">
+   648→              <h2 className="text-3xl md:text-4xl font-bold text-white">
+   649→                Ready to start trading?
+   650→              </h2>
+   651→              <p className="mt-4 text-muted-foreground">
+   652→                Join BlockExchange today and get{" "}
+   653→                <span className="text-white font-semibold">10,000 USDT demo balance</span>{" "}
+   654→                credited instantly to your wallet.
+   655→              </p>
+   656→              <div className="mt-7">
+   657→                <Button
+   658→                  size="lg"
+   659→                  onClick={() => navigate("register")}
+   660→                  className="bg-gradient-to-r from-[#2196F3] to-[#0D47A1] hover:opacity-90 text-white bx-glow"
+   661→                >
+   662→                  Register Now
+   663→                  <ArrowRight size={16} />
+   664→                </Button>
+   665→              </div>
+   666→            </div>
+   667→          </motion.div>
+   668→        </div>
+   669→      </section>
+   670→
+   671→      {/* 8. Stats strip */}
+   672→      <section className="py-16 border-t border-white/5">
+   673→        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+   674→          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+   675→            {BOTTOM_STATS.map((s, i) => (
+   676→              <motion.div
+   677→                key={s.label}
+   678→                initial={{ opacity: 0, y: 18 }}
+   679→                whileInView={{ opacity: 1, y: 0 }}
+   680→                viewport={{ once: true }}
+   681→                transition={{ duration: 0.4, delay: i * 0.08 }}
+   682→                className="text-center"
+   683→              >
+   684→                <div className="text-3xl md:text-4xl font-extrabold bx-text-gradient">
+   685→                  {s.value}
+   686→                </div>
+   687→                <div className="mt-1 text-sm text-muted-foreground">{s.label}</div>
+   688→              </motion.div>
+   689→            ))}
+   690→          </div>
+   691→        </div>
+   692→      </section>
+   693→    </div>
+   694→  );
+   695→}
+   696→
+   697→export default HomeView;
+   698→

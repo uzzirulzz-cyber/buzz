@@ -1,0 +1,206 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  uid           String   @unique // human-readable user ID, e.g. BX-000001
+  email         String   @unique
+  name          String
+  passwordHash  String
+  // RBAC: "CUSTOMER" | "SUB_AGENT" | "SUPER_ADMIN"
+  role          String   @default("CUSTOMER")
+  balance       Float    @default(0)
+  vipLevel      Int      @default(1)
+  country       String   @default("")
+  phone         String   @default("")
+  frozen        Boolean  @default(false)
+  frozenFunds   Float    @default(0)
+  creditBalance Float    @default(0)
+  walletLocked  Boolean  @default(false)
+  kycStatus     String   @default("PENDING")
+  lastLoginAt   DateTime?
+  status        String   @default("ACTIVE")
+  // Invitation-code system (Sub-Agents own a unique code; customers register with one)
+  invitationCode     String?  @unique // set ONLY for SUB_AGENT accounts
+  linkedSubAgentId   String?  // set on CUSTOMER: the Sub-Agent who owns them
+  registeredAt       DateTime? // set on CUSTOMER at registration time
+  mustChangePassword Boolean  @default(false) // force password change on first login (default pw)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  linkedSubAgent     User?         @relation("SubAgentToCustomer", fields: [linkedSubAgentId], references: [id])
+  customers          User[]        @relation("SubAgentToCustomer")
+  trades             Trade[]
+  transactions       Transaction[]
+  loginLogs          LoginLog[]
+  actionLogs         ActionLog[]
+  // Wallet
+  deposits           DepositRequest[]
+  withdrawals        WithdrawalRequest[]
+  transfers          Transfer[]          @relation("TransferSender")
+  receivedTransfers  Transfer[]          @relation("TransferRecipient")
+  walletLogs         WalletLog[]
+  // Messaging
+  sentMessages       Message[]     @relation("MessageSender")
+  ownedConversations Conversation[]  @relation("ConversationCustomer")
+  conversationMembers ConversationMember[]
+}
+
+model Trade {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbol      String
+  direction   String // "UP" | "DOWN"
+  duration    Int
+  amount      Float
+  entryPrice  Float
+  exitPrice   Float?
+  payoutRate  Float
+  result      String   @default("PENDING")
+  profit      Float    @default(0)
+  status      String   @default("ACTIVE")
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  settledAt   DateTime?
+}
+
+model Transaction {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String // "DEPOSIT" | "WITHDRAW" | "TRADE_PROFIT" | "TRADE_LOSS" | "BONUS"
+  amount    Float
+  method    String   @default("")
+  status    String   @default("PENDING")
+  reference String   @default("")
+  createdAt DateTime @default(now())
+}
+
+model LoginLog {
+  id        String   @id @default(cuid())
+  userId    String?  // null if attempted with unknown email
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  email     String
+  ip        String   @default("")
+  userAgent String   @default("")
+  success   Boolean
+  reason    String   @default("")
+  createdAt DateTime @default(now())
+}
+
+model ActionLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action    String   // e.g. "FREEZE_USER", "ADJUST_BALANCE", "APPROVE_DEPOSIT"
+  targetId  String?
+  detail    String   @default("")
+  createdAt DateTime @default(now())
+}
+
+// Live messaging support chat
+model Conversation {
+  id        String   @id @default(cuid())
+  subject   String   @default("Support")
+  // The customer who initiated the chat
+  customerId String
+  customer   User     @relation("ConversationCustomer", fields: [customerId], references: [id], onDelete: Cascade)
+  // The sub-agent (if customer is linked to one) — for routing
+  subAgentId String?
+  status     String   @default("OPEN") // "OPEN" | "CLOSED"
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  messages   Message[]
+  members    ConversationMember[]
+}
+
+model ConversationMember {
+  id              String       @id @default(cuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadAt      DateTime?
+  createdAt       DateTime     @default(now())
+}
+
+model Message {
+  id              String       @id @default(cuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId        String
+  sender          User         @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  body            String
+  // "CUSTOMER" | "SUPPORT" (support = sub-agent or super-admin)
+  senderRole      String       @default("CUSTOMER")
+  createdAt       DateTime     @default(now())
+}
+
+// Customer deposit requests (require admin approval)
+model DepositRequest {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount      Float
+  method      String   @default("")
+  reference   String   @default("")
+  proofUrl    String   @default("")
+  status      String   @default("PENDING")
+  adminNote   String   @default("")
+  editedAmount Float?
+  processedById String?
+  createdAt   DateTime @default(now())
+  processedAt DateTime?
+}
+
+// Customer withdrawal requests (require admin approval)
+model WithdrawalRequest {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount      Float
+  method      String   @default("")
+  destination String   @default("")
+  status      String   @default("PENDING")
+  adminNote   String   @default("")
+  processedById String?
+  createdAt   DateTime @default(now())
+  processedAt DateTime?
+}
+
+// Customer-to-customer transfers
+model Transfer {
+  id           String   @id @default(cuid())
+  senderId     String
+  sender       User     @relation("TransferSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId  String
+  recipient    User     @relation("TransferRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  amount       Float
+  note         String   @default("")
+  status       String   @default("COMPLETED")
+  createdAt    DateTime @default(now())
+}
+
+// Immutable wallet ledger
+model WalletLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  amount    Float
+  balanceAfter Float
+  reference String   @default("")
+  createdAt DateTime @default(now())
+}
